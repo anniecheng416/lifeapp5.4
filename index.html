@@ -366,4 +366,171 @@
                         isRemoteUpdate = true; const data = docSnap.data();
                         calendarEvents.value = data.calendarEvents || []; todos.value = data.todos || []; shoppingList.value = data.shoppingList || [];
                         const remoteEdu = data.eduList || []; const localEduImages = localImages.eduImages || []; eduList.value = [...remoteEdu, ...localEduImages].sort((a,b) => new Date(b.date) - new Date(a.date));
-                        const remoteBooks = data.bookList || []; const localCovers = localImages.
+                        const remoteBooks = data.bookList || []; const localCovers = localImages.bookCovers || []; bookList.value = remoteBooks.map(book => { if (book.cover && book.cover.startsWith('http')) return book; const foundCover = localCovers.find(c => c.id === book.id); return { ...book, cover: foundCover ? foundCover.cover : null }; }).sort((a,b) => new Date(b.date) - new Date(a.date));
+                        const remoteRecipes = data.recipeList || []; const localRecipeImages = localImages.recipeImages || []; recipeList.value = remoteRecipes.map(r => { const foundRecord = localRecipeImages.find(img => img.id === r.id); let imgs = []; if (foundRecord) { if (foundRecord.images) imgs = foundRecord.images; else if (foundRecord.image) imgs = [foundRecord.image]; } return { ...r, images: imgs }; });
+                        syncStatus.value = 'online'; document.querySelector('#loading-msg').style.display = 'none'; document.querySelector('#app').classList.remove('hidden'); setTimeout(() => isRemoteUpdate = false, 500);
+                    } else { setDoc(docRef, { calendarEvents: [], todos: [], shoppingList: [], eduList: [], bookList: [], recipeList: [] }); syncStatus.value = 'online'; document.querySelector('#loading-msg').style.display = 'none'; document.querySelector('#app').classList.remove('hidden'); }
+                });
+
+                let saveTimeout = null;
+                const saveToCloud = () => {
+                    if (isRemoteUpdate) return; syncStatus.value = 'syncing'; clearTimeout(saveTimeout);
+                    saveTimeout = setTimeout(async () => {
+                        try {
+                            const eduTextOnly = eduList.value.filter(item => item.type === 'text');
+                            const booksForCloud = bookList.value.map(b => (b.cover && b.cover.startsWith('http')) ? b : { ...b, cover: null });
+                            const recipesForCloud = recipeList.value.map(({ images, ...rest }) => rest);
+                            await setDoc(docRef, { calendarEvents: toRaw(calendarEvents.value), todos: toRaw(todos.value), shoppingList: toRaw(shoppingList.value), eduList: toRaw(eduTextOnly), bookList: toRaw(booksForCloud), recipeList: toRaw(recipesForCloud) }, { merge: true });
+                            syncStatus.value = 'online';
+                        } catch (e) { syncStatus.value = 'offline'; }
+                    }, 1000);
+                };
+
+                watch([calendarEvents, todos, shoppingList], saveToCloud, { deep: true });
+                watch(eduList, (nv) => { localImages.eduImages = nv.filter(i => i.type === 'image'); localStorage.setItem(LOCAL_IMG_KEY, JSON.stringify(localImages)); saveToCloud(); }, { deep: true });
+                watch(bookList, (nv) => { localImages.bookCovers = nv.filter(b => b.cover && !b.cover.startsWith('http')).map(b => ({ id: b.id, cover: b.cover })); localStorage.setItem(LOCAL_IMG_KEY, JSON.stringify(localImages)); saveToCloud(); }, { deep: true });
+                watch(recipeList, (nv) => { localImages.recipeImages = nv.filter(r => r.images && r.images.length > 0).map(r => ({ id: r.id, images: r.images })); localStorage.setItem(LOCAL_IMG_KEY, JSON.stringify(localImages)); saveToCloud(); }, { deep: true });
+
+                const now = new Date(); const year = ref(now.getFullYear()); const month = ref(now.getMonth() + 1); const selectedDate = ref(now.getDate());
+                const calForm = reactive({ title: '', who: '', hour: '', minute: '' });
+                const daysInMonth = computed(() => new Date(year.value, month.value, 0).getDate());
+                const firstDayOfMonth = computed(() => new Date(year.value, month.value - 1, 1).getDay());
+                const vicHolidays2026 = { '2026-1-1': "New Year's Day", '2026-1-26': "Australia Day", '2026-3-9': "Labour Day", '2026-4-3': "Good Friday", '2026-4-4': "Saturday before Easter", '2026-4-5': "Easter Sunday", '2026-4-6': "Easter Monday", '2026-4-25': "Anzac Day", '2026-6-8': "King's Birthday", '2026-11-3': "Melbourne Cup", '2026-12-25': "Christmas Day", '2026-12-26': "Boxing Day" };
+                const getHoliday = (d) => vicHolidays2026[`${year.value}-${month.value}-${d}`] || null;
+                const changeMonth = (d) => { month.value += d; if (month.value > 12) { month.value = 1; year.value++; } if (month.value < 1) { month.value = 12; year.value--; } selectedDate.value = 1; };
+                const selectDate = (d) => selectedDate.value = d;
+                const isToday = (d) => (new Date()).getFullYear() === year.value && (new Date()).getMonth() + 1 === month.value && (new Date()).getDate() === d;
+                const hasTask = (d) => calendarEvents.value.some(e => e.date === `${year.value}-${month.value}-${d}`);
+                const getSelectedDateTasks = computed(() => calendarEvents.value.filter(e => e.date === `${year.value}-${month.value}-${selectedDate.value}`).sort((a,b) => a.time.localeCompare(b.time)));
+                const addCalendarEvent = () => { if(calForm.title.trim()) { let t = '全日'; if (calForm.hour && calForm.minute) t = `${calForm.hour}:${calForm.minute}`; calendarEvents.value.push({ date: `${year.value}-${month.value}-${selectedDate.value}`, title: calForm.title, who: calForm.who, time: t }); calForm.title = ''; calForm.who = ''; calForm.hour = ''; calForm.minute = ''; } };
+                const confirmRemoveCalEvent = (task) => { if(confirm('確定要刪除這個行程嗎？')) { let i = calendarEvents.value.indexOf(task); if(i>-1) calendarEvents.value.splice(i, 1); } };
+                const removeCalEvent = confirmRemoveCalEvent; 
+
+                const todoForm = reactive({ text: '', who: '', date: '' });
+                const addTodo = () => { if (todoForm.text.trim()) { todos.value.unshift({ text: todoForm.text, who: todoForm.who, date: todoForm.date, done: false, count: 0 }); todoForm.text = ''; } };
+                const removeTodo = (i) => todos.value.splice(i, 1);
+                const toggleTodo = (i) => todos.value[i].done = !todos.value[i].done;
+                const incrementTodo = (t) => t.count++;
+                const shopForm = reactive({ text: '', location: '' });
+                const addShopItem = () => { if (shopForm.text.trim()) { shoppingList.value.unshift({ text: shopForm.text, location: shopForm.location, bought: false }); shopForm.text = ''; shopForm.location = ''; } };
+                const removeShop = (i) => shoppingList.value.splice(i, 1);
+                const toggleShop = (i) => shoppingList.value[i].bought = !shoppingList.value[i].bought;
+
+                const recipeSearch = ref(''); const recipeFilter = ref('main'); const recipeForm = reactive({ title: '', content: '', videoUrl: '', type: 'main', tempImages: [], videoPreviewUrl: null });
+                const filteredRecipes = computed(() => {
+                    let r = recipeList.value.filter(x => x.type === recipeFilter.value);
+                    if (recipeSearch.value.trim()) { let k = recipeSearch.value.toLowerCase(); r = r.filter(x => x.title.toLowerCase().includes(k) || x.content.toLowerCase().includes(k)); }
+                    return r;
+                });
+                
+                const getIgId = (url) => { if (!url) return null; let match = url.match(/(?:p|reel|reels)\/([a-zA-Z0-9_-]+)/); return match ? match[1] : null; };
+
+                watch(() => recipeForm.videoUrl, (url) => {
+                    if(!url) { recipeForm.videoPreviewUrl = null; return; }
+                    let ytMatch = url.match(/^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/);
+                    if (ytMatch && ytMatch[2].length === 11) {
+                        recipeForm.videoPreviewUrl = `https://img.youtube.com/vi/${ytMatch[2]}/mqdefault.jpg`;
+                    } else if (url.includes('instagram.com')) {
+                        recipeForm.videoPreviewUrl = url; // Full URL for IG embed
+                    } else {
+                        recipeForm.videoPreviewUrl = null;
+                    }
+                });
+
+                const handleRecipeImages = (e) => { let f = e.target.files; if (f) { for (let i=0; i<f.length; i++) { let r = new FileReader(); r.onload = (ev) => recipeForm.tempImages.push(ev.target.result); r.readAsDataURL(f[i]); } } };
+                const removeTempImage = (i) => recipeForm.tempImages.splice(i, 1);
+                const addRecipe = () => { 
+                    if (recipeForm.title.trim()) { 
+                        let imgs = [...recipeForm.tempImages];
+                        // If no images and has YT thumb (IG embed handles itself)
+                        if (imgs.length === 0 && recipeForm.videoPreviewUrl && !recipeForm.videoPreviewUrl.includes('instagram.com')) {
+                            imgs.push(recipeForm.videoPreviewUrl);
+                        }
+                        recipeList.value.unshift({ id: Date.now().toString(), title: recipeForm.title, content: recipeForm.content, type: recipeForm.type, videoUrl: recipeForm.videoUrl, images: imgs }); 
+                        recipeForm.title = ''; recipeForm.content = ''; recipeForm.videoUrl = ''; recipeForm.tempImages = []; 
+                    } 
+                };
+                const confirmDeleteRecipe = (t) => { if (confirm('確定要刪除嗎？')) { let i = recipeList.value.indexOf(t); if (i>-1) recipeList.value.splice(i, 1); showRecipeModal.value = false; } };
+                const showRecipeModal = ref(false); const isEditingRecipe = ref(false); const recipeInView = ref({}); const recipeEditForm = reactive({ title: '', content: '', type: '', videoUrl: '', tempImages: [] });
+                const getEmbedUrl = (u) => { if (!u) return null; let m = u.match(/^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/); return (m && m[2].length === 11) ? 'https://www.youtube.com/embed/' + m[2] : null; };
+                
+                const openRecipeModal = (t) => { 
+                    recipeInView.value = t; 
+                    isEditingRecipe.value = false; 
+                    showRecipeModal.value = true;
+                    // Force refresh IG embeds
+                    nextTick(() => { if (window.instgrm) window.instgrm.Embeds.process(); });
+                };
+                
+                const startEditRecipe = () => { isEditingRecipe.value = true; Object.assign(recipeEditForm, { title: recipeInView.value.title, content: recipeInView.value.content, type: recipeInView.value.type, videoUrl: recipeInView.value.videoUrl || '', tempImages: [...(recipeInView.value.images || [])] }); };
+                const handleEditRecipeImages = (e) => { let f = e.target.files; if (f) { for (let i=0; i<f.length; i++) { let r = new FileReader(); r.onload = (ev) => recipeEditForm.tempImages.push(ev.target.result); r.readAsDataURL(f[i]); } } };
+                const removeEditImage = (i) => recipeEditForm.tempImages.splice(i, 1);
+                const saveEditedRecipe = () => { 
+                    if (recipeEditForm.tempImages.length === 0 && recipeEditForm.videoUrl) {
+                        let ytMatch = recipeEditForm.videoUrl.match(/^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/);
+                        if (ytMatch && ytMatch[2].length === 11) recipeEditForm.tempImages.push(`https://img.youtube.com/vi/${ytMatch[2]}/mqdefault.jpg`);
+                    }
+                    Object.assign(recipeInView.value, { title: recipeEditForm.title, content: recipeEditForm.content, type: recipeEditForm.type, videoUrl: recipeEditForm.videoUrl, images: [...recipeEditForm.tempImages] }); isEditingRecipe.value = false; saveToCloud(); 
+                };
+
+                const eduForm = reactive({ text: '' });
+                const addEduNote = () => { if(eduForm.text.trim()){ eduList.value.unshift({ type: 'text', content: eduForm.text, date: new Date().toLocaleDateString(), shareCount: 0 }); eduForm.text = ''; } };
+                const handleEduImage = (e) => { let f = e.target.files[0]; if (f) { let r = new FileReader(); r.onload = (ev) => eduList.value.unshift({ type: 'image', content: ev.target.result, date: new Date().toLocaleDateString(), shareCount: 0 }); r.readAsDataURL(f); } };
+                const removeEdu = (i) => eduList.value.splice(i, 1);
+                const incrementShare = (t) => t.shareCount++;
+
+                const bookForm = reactive({ searchText: '', title: '', readers: [], date: new Date().toISOString().split('T')[0], tempCover: null });
+                const searchResults = ref([]); const bookFilter = ref('all'); const localBookSearch = ref('');
+                const stats = computed(() => ({ kobe: bookList.value.filter(b => b.readers.includes('Kobe')).length, luka: bookList.value.filter(b => b.readers.includes('Luka')).length }));
+                const filteredBooks = computed(() => { let r = bookList.value; if (bookFilter.value !== 'all') r = r.filter(b => b.readers.includes(bookFilter.value)); if (localBookSearch.value.trim()) { let k = localBookSearch.value.toLowerCase(); r = r.filter(b => b.title.toLowerCase().includes(k)); } return r; });
+                const toggleBookFilter = (n) => bookFilter.value = (bookFilter.value === n) ? 'all' : n;
+                const toggleReader = (n) => bookForm.readers.includes(n) ? bookForm.readers = bookForm.readers.filter(x => x !== n) : bookForm.readers.push(n);
+                
+                // *** FIXED: GOOGLE BOOKS API ***
+                const searchBooks = async () => { 
+                    if (!bookForm.searchText.trim()) return alert("請輸入書名關鍵字"); 
+                    isSearching.value = true; 
+                    searchResults.value = []; 
+                    try { 
+                        // Using Google Books API
+                        let res = await fetch(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(bookForm.searchText)}&maxResults=10`); 
+                        if (!res.ok) throw new Error("網絡錯誤");
+                        let d = await res.json(); 
+                        if (d.items && d.items.length > 0) {
+                            searchResults.value = d.items.map(item => ({
+                                id: item.id,
+                                title: item.volumeInfo.title,
+                                cover: item.volumeInfo.imageLinks ? item.volumeInfo.imageLinks.thumbnail.replace('http:', 'https:') : null
+                            }));
+                        } else {
+                            alert("找不到相關書本，請試試其他關鍵字");
+                        }
+                    } catch (e) { 
+                        console.error(e);
+                        alert("搜尋失敗，請檢查網絡連線"); 
+                    } finally {
+                        isSearching.value = false;
+                    }
+                };
+                
+                const selectBook = (b) => { bookForm.title = b.title; bookForm.tempCover = b.cover; searchResults.value = []; bookForm.searchText = ''; };
+                const clearSelection = () => { bookForm.title = ''; bookForm.tempCover = null; };
+                const addBook = () => { if (bookForm.title.trim()) { bookList.value.unshift({ id: Date.now().toString(), title: bookForm.title, readers: [...bookForm.readers], date: bookForm.date, cover: bookForm.tempCover }); bookForm.title = ''; bookForm.readers = []; bookForm.tempCover = null; bookForm.searchText = ''; } };
+                const confirmRemoveBook = (t) => { if (confirm('確定要刪除這本書的閱讀記錄嗎？')) { let i = bookList.value.indexOf(t); if(i>-1) bookList.value.splice(i, 1); } };
+
+                const currentTabTitle = computed(() => ({ calendar: '行程日曆', tasks: '任務中心', recipe: '私房食譜', edu: '教養筆記', book: '閱讀存摺' }[currentTab.value]));
+                const todayDate = computed(() => new Date().toLocaleDateString('zh-TW', { weekday: 'long', month: 'long', day: 'numeric' }));
+
+                return { 
+                    currentTab, currentTabTitle, todayDate, syncStatusText, syncStatusClass, 
+                    year, month, daysInMonth, firstDayOfMonth, selectedDate, calForm, changeMonth, selectDate, isToday, hasTask, getSelectedDateTasks, addCalendarEvent, removeCalEvent, confirmRemoveCalEvent, getHoliday, 
+                    taskSubTab, todoForm, todos, addTodo, removeTodo, toggleTodo, incrementTodo, shopForm, shoppingList, addShopItem, removeShop, toggleShop, 
+                    recipeSearch, recipeFilter, recipeForm, filteredRecipes, handleRecipeImages, removeTempImage, addRecipe, confirmDeleteRecipe, showRecipeModal, isEditingRecipe, recipeInView, openRecipeModal, startEditRecipe, recipeEditForm, handleEditRecipeImages, removeEditImage, saveEditedRecipe, getEmbedUrl, getIgId,
+                    eduForm, eduList, addEduNote, handleEduImage, removeEdu, incrementShare, 
+                    bookList, bookForm, toggleReader, addBook, confirmRemoveBook, searchBooks, isSearching, searchResults, selectBook, clearSelection, stats, bookFilter, toggleBookFilter, filteredBooks, localBookSearch 
+                };
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
