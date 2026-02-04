@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <link rel="icon" href="https://cdn-icons-png.flaticon.com/512/2907/2907150.png">
-    <title>我的生活助手 (v4.9 穩定修復版)</title>
+    <title>我的生活助手 (v5.4 列表預覽版)</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/vue/3.3.4/vue.global.min.js"></script>
@@ -27,11 +27,13 @@
         .status-offline { background-color: #ef4444; }
         .status-syncing { background-color: #f59e0b; animation: pulse 1s infinite; }
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
-        /* Modal Transition */
         .modal-enter-active, .modal-leave-active { transition: opacity 0.3s ease; }
         .modal-enter-from, .modal-leave-to { opacity: 0; }
         .modal-enter-active .modal-container, .modal-leave-active .modal-container { transition: transform 0.3s ease; }
         .modal-enter-from .modal-container, .modal-leave-to .modal-container { transform: scale(0.95); }
+        
+        /* Iframe helpers */
+        .iframe-cover { position: absolute; inset: 0; z-index: 10; background: transparent; }
     </style>
 </head>
 <body class="bg-gray-100 h-screen flex justify-center overflow-hidden">
@@ -89,7 +91,7 @@
                     <div v-for="(task, index) in getSelectedDateTasks" :key="index" class="flex items-start gap-3 p-3 border-b border-slate-50 last:border-0">
                         <div class="text-xs font-bold text-slate-400 pt-1 w-10 text-right">{{ task.time }}</div>
                         <div class="flex-1"><div class="text-slate-800 font-medium text-sm">{{ task.title }}</div><div class="text-xs text-amber-600 bg-amber-50 inline-block px-1.5 py-0.5 rounded mt-1" v-if="task.who">@{{ task.who }}</div></div>
-                        <button @click="confirmRemoveCalEvent(task)" class="text-slate-300 hover:text-red-400 px-2 font-bold text-lg">&times;</button>
+                        <button @click.stop="confirmRemoveCalEvent(task)" class="text-slate-300 hover:text-red-400 px-2 font-bold text-lg">&times;</button>
                     </div>
                 </div>
             </div>
@@ -99,7 +101,6 @@
                     <button @click="taskSubTab = 'shopping'" :class="['flex-1 py-2 text-sm font-bold rounded-lg transition', taskSubTab === 'shopping' ? 'bg-orange-500 text-white shadow' : 'text-slate-400']">🛒 購物</button>
                     <button @click="taskSubTab = 'todo'" :class="['flex-1 py-2 text-sm font-bold rounded-lg transition', taskSubTab === 'todo' ? 'bg-slate-800 text-white shadow' : 'text-slate-400']">📝 待辦</button>
                 </div>
-                
                 <div v-if="taskSubTab === 'shopping'" class="space-y-4">
                     <div class="bg-white p-3 rounded-2xl shadow-sm space-y-2 border-l-4 border-orange-400">
                         <input v-model="shopForm.text" @keyup.enter="addShopItem" type="text" placeholder="要買什麼..." class="w-full bg-transparent p-2 outline-none text-sm border-b border-orange-100">
@@ -116,7 +117,6 @@
                         <div class="flex items-center"><div v-if="item.location" class="mr-3 text-[10px] text-orange-400">{{ item.location }}</div><button @click="removeShop(index)" class="text-slate-300 hover:text-red-400 px-2">&times;</button></div>
                     </div>
                 </div>
-
                 <div v-if="taskSubTab === 'todo'" class="space-y-4">
                     <div class="bg-white p-4 rounded-2xl shadow-sm space-y-3 border-l-4 border-slate-800">
                         <input v-model="todoForm.text" @keyup.enter="addTodo" type="text" placeholder="輸入待辦事項..." class="w-full bg-slate-50 p-2.5 rounded-lg text-sm outline-none">
@@ -155,15 +155,15 @@
 
                 <div class="bg-white p-4 rounded-2xl shadow-sm space-y-3 border-l-4 border-pink-400">
                     <input v-model="recipeForm.title" type="text" placeholder="食譜名稱..." class="w-full bg-slate-50 p-2.5 rounded-lg outline-none text-slate-700 text-sm">
-                    <input v-model="recipeForm.videoUrl" type="text" placeholder="YouTube 或 Instagram Reel 連結 (自動抓封面)..." class="w-full bg-slate-50 p-2.5 rounded-lg outline-none text-slate-700 text-xs">
+                    <input v-model="recipeForm.videoUrl" type="text" placeholder="YouTube 或 IG 連結 (自動預覽)..." class="w-full bg-slate-50 p-2.5 rounded-lg outline-none text-slate-700 text-xs">
                     
                     <div v-if="recipeForm.tempImages.length > 0 || recipeForm.videoPreviewUrl" class="w-full bg-slate-50 rounded-lg overflow-hidden border border-slate-200 mt-2">
-                        <div v-if="recipeForm.videoPreviewUrl" class="w-full aspect-video relative">
-                             <img :src="recipeForm.videoPreviewUrl" class="w-full h-full object-cover" v-if="!recipeForm.videoPreviewUrl.includes('instagram')">
-                             <div v-else class="w-full h-full flex flex-col items-center justify-center bg-gradient-to-tr from-yellow-400 via-red-500 to-purple-500 text-white font-bold text-sm">
-                                 <span class="text-2xl mb-1">📸</span>Instagram Reel
+                        <div v-if="recipeForm.videoPreviewUrl" class="w-full aspect-video relative bg-black">
+                             <img :src="recipeForm.videoPreviewUrl" class="w-full h-full object-cover" v-if="!recipeForm.videoPreviewUrl.startsWith('IG:')">
+                             <div v-else class="w-full h-full relative">
+                                <iframe :src="`https://www.instagram.com/p/${getIgId(recipeForm.videoUrl)}/embed/`" class="w-full h-full" frameborder="0" scrolling="no" allowtransparency="true"></iframe>
                              </div>
-                             <div class="absolute top-2 right-2 bg-black/50 text-white px-2 py-1 text-xs rounded">預覽中</div>
+                             <div class="absolute top-2 right-2 bg-black/50 text-white px-2 py-1 text-xs rounded z-10">預覽中</div>
                         </div>
                         <div v-else class="flex gap-2 overflow-x-auto p-2">
                             <div v-for="(img, idx) in recipeForm.tempImages" :key="idx" class="relative w-16 h-16 rounded overflow-hidden border border-slate-200 shrink-0">
@@ -185,14 +185,18 @@
 
                 <div class="grid grid-cols-1 gap-3 pb-20">
                     <div v-for="(item, index) in filteredRecipes" :key="index" @click="openRecipeModal(item)" class="bg-white p-3 rounded-xl shadow-sm flex gap-3 relative cursor-pointer hover:shadow-md transition">
-                         <div class="w-24 h-24 bg-slate-100 rounded-lg overflow-hidden flex items-center justify-center shrink-0 border border-slate-100">
+                         <div class="w-24 h-24 bg-slate-100 rounded-lg overflow-hidden flex items-center justify-center shrink-0 border border-slate-100 relative">
                             <img v-if="item.images && item.images.length > 0" :src="item.images[0]" class="w-full h-full object-cover">
-                            <div v-else-if="item.videoUrl && item.videoUrl.includes('instagram.com')" class="w-full h-full flex items-center justify-center bg-gradient-to-tr from-yellow-400 via-red-500 to-purple-500 text-white text-3xl">📸</div>
+                            <div v-else-if="item.videoUrl && item.videoUrl.includes('instagram.com')" class="w-full h-full relative">
+                                <iframe :src="`https://www.instagram.com/p/${getIgId(item.videoUrl)}/embed/`" class="w-full h-full" frameborder="0" scrolling="no" allowtransparency="true"></iframe>
+                                <div class="iframe-cover"></div>
+                            </div>
+                            <div v-else-if="item.videoUrl && item.videoUrl.includes('youtu')" class="w-full h-full flex items-center justify-center bg-red-600 text-white text-3xl">▶</div>
                             <span v-else class="text-2xl">🍲</span>
                         </div>
                         <div class="flex-1 overflow-hidden">
                             <h4 class="font-bold text-slate-800 text-base leading-tight mb-1">{{ item.title }}</h4>
-                            <div class="text-[10px] text-pink-500 mb-1" v-if="item.videoUrl">{{ item.videoUrl.includes('instagram.com') ? '📸 Instagram Reel' : '▶ YouTube 影片' }}</div>
+                            <div class="text-[10px] text-pink-500 mb-1" v-if="item.videoUrl">{{ item.videoUrl.includes('instagram.com') ? '📸 Instagram' : '▶ YouTube' }}</div>
                             <div class="text-[10px] text-slate-500 line-clamp-3 bg-slate-50 p-1.5 rounded">{{ item.content }}</div>
                         </div>
                     </div>
@@ -241,7 +245,7 @@
                     <div class="flex gap-2">
                         <input v-model="bookForm.searchText" @keyup.enter="searchBooks" type="text" placeholder="新增: 網上搜書名..." class="flex-1 bg-slate-50 p-2 rounded-lg text-sm outline-none">
                         <button @click="searchBooks" class="bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-bold whitespace-nowrap">
-                            <span v-if="isSearching">搜尋中...</span>
+                            <span v-if="isSearching">...</span>
                             <span v-else>🔍 搜書</span>
                         </button>
                     </div>
@@ -288,9 +292,11 @@
                 <div class="bg-white w-full max-w-md max-h-[85vh] rounded-2xl overflow-hidden flex flex-col shadow-2xl modal-container">
                     
                     <div v-if="!isEditingRecipe" class="flex flex-col h-full overflow-hidden">
-                        <div class="w-full bg-black shrink-0 relative aspect-video">
+                        <div class="w-full bg-black shrink-0 relative aspect-video bg-gray-900">
                             <div v-if="getEmbedUrl(recipeInView.videoUrl)" class="w-full h-full"><iframe :src="getEmbedUrl(recipeInView.videoUrl)" class="w-full h-full" frameborder="0" allowfullscreen></iframe></div>
-                            <div v-else-if="recipeInView.videoUrl && recipeInView.videoUrl.includes('instagram.com')" class="w-full h-full flex flex-col items-center justify-center bg-gradient-to-tr from-yellow-400 via-red-500 to-purple-500 p-4"><span class="text-3xl mb-2 text-white">📸</span><a :href="recipeInView.videoUrl" target="_blank" class="bg-white text-pink-600 px-4 py-2 rounded-full text-xs font-bold shadow-lg">在 Instagram 開啟影片</a></div>
+                            <div v-else-if="recipeInView.videoUrl && recipeInView.videoUrl.includes('instagram.com')" class="w-full h-full relative">
+                                <iframe :src="`https://www.instagram.com/p/${getIgId(recipeInView.videoUrl)}/embed/`" class="w-full h-full" frameborder="0" scrolling="no" allowtransparency="true"></iframe>
+                            </div>
                             <div v-else class="w-full h-full overflow-x-auto flex snap-x snap-mandatory"><div v-if="recipeInView.images && recipeInView.images.length > 0" v-for="(img, i) in recipeInView.images" :key="i" class="w-full h-full shrink-0 snap-center relative"><img :src="img" class="w-full h-full object-contain"><span v-if="recipeInView.images.length > 1" class="absolute bottom-2 right-2 bg-black/50 text-white text-xs px-2 rounded">{{ i+1 }}/{{ recipeInView.images.length }}</span></div><div v-else class="w-full h-full flex items-center justify-center text-4xl text-white">🍲</div></div>
                             <button @click="showRecipeModal = false" class="absolute top-2 right-2 bg-black/50 text-white rounded-full p-1 z-10">&times;</button>
                         </div>
@@ -332,11 +338,11 @@
     </div>
 
     <script type="module">
-        import { createApp, ref, computed, reactive, watch, toRaw } from 'https://cdnjs.cloudflare.com/ajax/libs/vue/3.3.4/vue.esm-browser.js';
+        import { createApp, ref, computed, reactive, watch, toRaw, nextTick } from 'https://cdnjs.cloudflare.com/ajax/libs/vue/3.3.4/vue.esm-browser.js';
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-        // Configuration
+        // Config
         const firebaseConfig = { apiKey: "AIzaSyBm-HP5HO5cCbT7ciiye5ZzoMW5BDa6_EI", authDomain: "my-family-app-8dd29.firebaseapp.com", projectId: "my-family-app-8dd29", storageBucket: "my-family-app-8dd29.firebasestorage.app", messagingSenderId: "505912170720", appId: "1:505912170720:web:e8a5d42e6c5cef062d1885", measurementId: "G-J0SZDCDM16" };
         const firebaseApp = initializeApp(firebaseConfig);
         const db = getFirestore(firebaseApp);
@@ -344,226 +350,20 @@
         createApp({
             setup() {
                 const currentTab = ref('calendar');
-                const taskSubTab = ref('shopping'); // Default Shopping
+                const taskSubTab = ref('shopping');
                 const LOCAL_IMG_KEY = 'my-family-app-images';
                 const localImages = JSON.parse(localStorage.getItem(LOCAL_IMG_KEY) || '{"eduImages": [], "bookCovers": [], "recipeImages": []}');
                 
-                // Data References
-                const calendarEvents = ref([]); 
-                const todos = ref([]); 
-                const shoppingList = ref([]); 
-                const eduList = ref([]); 
-                const bookList = ref([]); 
-                const recipeList = ref([]);
-                
-                const isSearching = ref(false); 
-                const syncStatus = ref('offline');
+                const calendarEvents = ref([]); const todos = ref([]); const shoppingList = ref([]); const eduList = ref([]); const bookList = ref([]); const recipeList = ref([]);
+                const isSearching = ref(false); const syncStatus = ref('offline');
                 const syncStatusText = computed(() => syncStatus.value === 'online' ? '已同步' : syncStatus.value === 'syncing' ? '同步中...' : '離線');
                 const syncStatusClass = computed(() => `status-${syncStatus.value}`);
-                let isRemoteUpdate = false; 
-                const docRef = doc(db, "familyApp", "sharedData");
+                let isRemoteUpdate = false; const docRef = doc(db, "familyApp", "sharedData");
 
-                // Firebase Listener
+                // Sync
                 onSnapshot(docRef, (docSnap) => {
                     if (docSnap.exists()) {
                         isRemoteUpdate = true; const data = docSnap.data();
-                        calendarEvents.value = data.calendarEvents || []; 
-                        todos.value = data.todos || []; 
-                        shoppingList.value = data.shoppingList || [];
-                        
-                        const remoteEdu = data.eduList || []; 
-                        const localEduImages = localImages.eduImages || []; 
-                        eduList.value = [...remoteEdu, ...localEduImages].sort((a,b) => new Date(b.date) - new Date(a.date));
-                        
-                        const remoteBooks = data.bookList || []; 
-                        const localCovers = localImages.bookCovers || []; 
-                        bookList.value = remoteBooks.map(book => { if (book.cover && book.cover.startsWith('http')) return book; const foundCover = localCovers.find(c => c.id === book.id); return { ...book, cover: foundCover ? foundCover.cover : null }; }).sort((a,b) => new Date(b.date) - new Date(a.date));
-                        
-                        const remoteRecipes = data.recipeList || []; 
-                        const localRecipeImages = localImages.recipeImages || []; 
-                        recipeList.value = remoteRecipes.map(r => { const foundRecord = localRecipeImages.find(img => img.id === r.id); let imgs = []; if (foundRecord) { if (foundRecord.images) imgs = foundRecord.images; else if (foundRecord.image) imgs = [foundRecord.image]; } return { ...r, images: imgs }; });
-                        
-                        syncStatus.value = 'online'; 
-                        document.querySelector('#loading-msg').style.display = 'none'; 
-                        document.querySelector('#app').classList.remove('hidden'); 
-                        setTimeout(() => isRemoteUpdate = false, 500);
-                    } else { 
-                        setDoc(docRef, { calendarEvents: [], todos: [], shoppingList: [], eduList: [], bookList: [], recipeList: [] }); 
-                        syncStatus.value = 'online'; 
-                        document.querySelector('#loading-msg').style.display = 'none'; 
-                        document.querySelector('#app').classList.remove('hidden'); 
-                    }
-                });
-
-                // Firebase Save
-                let saveTimeout = null;
-                const saveToCloud = () => {
-                    if (isRemoteUpdate) return; 
-                    syncStatus.value = 'syncing'; 
-                    clearTimeout(saveTimeout);
-                    saveTimeout = setTimeout(async () => {
-                        try {
-                            const eduTextOnly = eduList.value.filter(item => item.type === 'text');
-                            const booksForCloud = bookList.value.map(b => (b.cover && b.cover.startsWith('http')) ? b : { ...b, cover: null });
-                            const recipesForCloud = recipeList.value.map(({ images, ...rest }) => rest);
-                            await setDoc(docRef, { 
-                                calendarEvents: toRaw(calendarEvents.value), 
-                                todos: toRaw(todos.value), 
-                                shoppingList: toRaw(shoppingList.value), 
-                                eduList: toRaw(eduTextOnly), 
-                                bookList: toRaw(booksForCloud), 
-                                recipeList: toRaw(recipesForCloud) 
-                            }, { merge: true });
-                            syncStatus.value = 'online';
-                        } catch (e) { syncStatus.value = 'offline'; }
-                    }, 1000);
-                };
-
-                watch([calendarEvents, todos, shoppingList], saveToCloud, { deep: true });
-                watch(eduList, (nv) => { localImages.eduImages = nv.filter(i => i.type === 'image'); localStorage.setItem(LOCAL_IMG_KEY, JSON.stringify(localImages)); saveToCloud(); }, { deep: true });
-                watch(bookList, (nv) => { localImages.bookCovers = nv.filter(b => b.cover && !b.cover.startsWith('http')).map(b => ({ id: b.id, cover: b.cover })); localStorage.setItem(LOCAL_IMG_KEY, JSON.stringify(localImages)); saveToCloud(); }, { deep: true });
-                watch(recipeList, (nv) => { localImages.recipeImages = nv.filter(r => r.images && r.images.length > 0).map(r => ({ id: r.id, images: r.images })); localStorage.setItem(LOCAL_IMG_KEY, JSON.stringify(localImages)); saveToCloud(); }, { deep: true });
-
-                // Calendar Logic
-                const now = new Date(); const year = ref(now.getFullYear()); const month = ref(now.getMonth() + 1); const selectedDate = ref(now.getDate());
-                const calForm = reactive({ title: '', who: '', hour: '', minute: '' });
-                const daysInMonth = computed(() => new Date(year.value, month.value, 0).getDate());
-                const firstDayOfMonth = computed(() => new Date(year.value, month.value - 1, 1).getDay());
-                const vicHolidays2026 = { '2026-1-1': "New Year's Day", '2026-1-26': "Australia Day", '2026-3-9': "Labour Day", '2026-4-3': "Good Friday", '2026-4-4': "Saturday before Easter", '2026-4-5': "Easter Sunday", '2026-4-6': "Easter Monday", '2026-4-25': "Anzac Day", '2026-6-8': "King's Birthday", '2026-11-3': "Melbourne Cup", '2026-12-25': "Christmas Day", '2026-12-26': "Boxing Day" };
-                const getHoliday = (d) => vicHolidays2026[`${year.value}-${month.value}-${d}`] || null;
-                const changeMonth = (d) => { month.value += d; if (month.value > 12) { month.value = 1; year.value++; } if (month.value < 1) { month.value = 12; year.value--; } selectedDate.value = 1; };
-                const selectDate = (d) => selectedDate.value = d;
-                const isToday = (d) => (new Date()).getFullYear() === year.value && (new Date()).getMonth() + 1 === month.value && (new Date()).getDate() === d;
-                const hasTask = (d) => calendarEvents.value.some(e => e.date === `${year.value}-${month.value}-${d}`);
-                const getSelectedDateTasks = computed(() => calendarEvents.value.filter(e => e.date === `${year.value}-${month.value}-${selectedDate.value}`).sort((a,b) => a.time.localeCompare(b.time)));
-                const addCalendarEvent = () => { if(calForm.title.trim()) { let t = '全日'; if (calForm.hour && calForm.minute) t = `${calForm.hour}:${calForm.minute}`; calendarEvents.value.push({ date: `${year.value}-${month.value}-${selectedDate.value}`, title: calForm.title, who: calForm.who, time: t }); calForm.title = ''; calForm.who = ''; calForm.hour = ''; calForm.minute = ''; } };
-                
-                // Confirm Delete Calendar Event
-                const confirmRemoveCalEvent = (task) => { 
-                    if(confirm('確定要刪除這個行程嗎？')) { 
-                        let i = calendarEvents.value.indexOf(task); 
-                        if(i>-1) calendarEvents.value.splice(i, 1); 
-                    } 
-                };
-                // Legacy binding for template compatibility if needed, but updated template uses confirmRemoveCalEvent directly
-                const removeCalEvent = confirmRemoveCalEvent;
-
-                // Tasks Logic
-                const todoForm = reactive({ text: '', who: '', date: '' });
-                const addTodo = () => { if (todoForm.text.trim()) { todos.value.unshift({ text: todoForm.text, who: todoForm.who, date: todoForm.date, done: false, count: 0 }); todoForm.text = ''; } };
-                const removeTodo = (i) => todos.value.splice(i, 1);
-                const toggleTodo = (i) => todos.value[i].done = !todos.value[i].done;
-                const incrementTodo = (t) => t.count++;
-                const shopForm = reactive({ text: '', location: '' });
-                const addShopItem = () => { if (shopForm.text.trim()) { shoppingList.value.unshift({ text: shopForm.text, location: shopForm.location, bought: false }); shopForm.text = ''; shopForm.location = ''; } };
-                const removeShop = (i) => shoppingList.value.splice(i, 1);
-                const toggleShop = (i) => shoppingList.value[i].bought = !shoppingList.value[i].bought;
-
-                // Recipe Logic
-                const recipeSearch = ref(''); const recipeFilter = ref('main'); const recipeForm = reactive({ title: '', content: '', videoUrl: '', type: 'main', tempImages: [], videoPreviewUrl: null });
-                const filteredRecipes = computed(() => {
-                    let r = recipeList.value.filter(x => x.type === recipeFilter.value);
-                    if (recipeSearch.value.trim()) { let k = recipeSearch.value.toLowerCase(); r = r.filter(x => x.title.toLowerCase().includes(k) || x.content.toLowerCase().includes(k)); }
-                    return r;
-                });
-                
-                // Auto Preview Watcher
-                watch(() => recipeForm.videoUrl, (url) => {
-                    if(!url) { recipeForm.videoPreviewUrl = null; return; }
-                    let ytMatch = url.match(/^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/);
-                    if (ytMatch && ytMatch[2].length === 11) {
-                        recipeForm.videoPreviewUrl = `https://img.youtube.com/vi/${ytMatch[2]}/mqdefault.jpg`;
-                    } else if (url.includes('instagram.com')) {
-                        recipeForm.videoPreviewUrl = 'instagram'; 
-                    } else {
-                        recipeForm.videoPreviewUrl = null;
-                    }
-                });
-
-                const handleRecipeImages = (e) => { let f = e.target.files; if (f) { for (let i=0; i<f.length; i++) { let r = new FileReader(); r.onload = (ev) => recipeForm.tempImages.push(ev.target.result); r.readAsDataURL(f[i]); } } };
-                const removeTempImage = (i) => recipeForm.tempImages.splice(i, 1);
-                const addRecipe = () => { 
-                    if (recipeForm.title.trim()) { 
-                        let imgs = [...recipeForm.tempImages];
-                        if (imgs.length === 0 && recipeForm.videoPreviewUrl && recipeForm.videoPreviewUrl !== 'instagram') {
-                            imgs.push(recipeForm.videoPreviewUrl);
-                        }
-                        recipeList.value.unshift({ id: Date.now().toString(), title: recipeForm.title, content: recipeForm.content, type: recipeForm.type, videoUrl: recipeForm.videoUrl, images: imgs }); 
-                        recipeForm.title = ''; recipeForm.content = ''; recipeForm.videoUrl = ''; recipeForm.tempImages = []; 
-                    } 
-                };
-                const confirmDeleteRecipe = (t) => { if (confirm('確定要刪除嗎？')) { let i = recipeList.value.indexOf(t); if (i>-1) recipeList.value.splice(i, 1); showRecipeModal.value = false; } };
-                
-                // Recipe Modal
-                const showRecipeModal = ref(false); const isEditingRecipe = ref(false); const recipeInView = ref({}); const recipeEditForm = reactive({ title: '', content: '', type: '', videoUrl: '', tempImages: [] });
-                const getEmbedUrl = (u) => { if (!u) return null; let m = u.match(/^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/); return (m && m[2].length === 11) ? 'https://www.youtube.com/embed/' + m[2] : null; };
-                const openRecipeModal = (t) => { recipeInView.value = t; isEditingRecipe.value = false; showRecipeModal.value = true; };
-                const startEditRecipe = () => { isEditingRecipe.value = true; Object.assign(recipeEditForm, { title: recipeInView.value.title, content: recipeInView.value.content, type: recipeInView.value.type, videoUrl: recipeInView.value.videoUrl || '', tempImages: [...(recipeInView.value.images || [])] }); };
-                const handleEditRecipeImages = (e) => { let f = e.target.files; if (f) { for (let i=0; i<f.length; i++) { let r = new FileReader(); r.onload = (ev) => recipeEditForm.tempImages.push(ev.target.result); r.readAsDataURL(f[i]); } } };
-                const removeEditImage = (i) => recipeEditForm.tempImages.splice(i, 1);
-                const saveEditedRecipe = () => { 
-                    if (recipeEditForm.tempImages.length === 0 && recipeEditForm.videoUrl) {
-                        let ytMatch = recipeEditForm.videoUrl.match(/^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/);
-                        if (ytMatch && ytMatch[2].length === 11) recipeEditForm.tempImages.push(`https://img.youtube.com/vi/${ytMatch[2]}/mqdefault.jpg`);
-                    }
-                    Object.assign(recipeInView.value, { title: recipeEditForm.title, content: recipeEditForm.content, type: recipeEditForm.type, videoUrl: recipeEditForm.videoUrl, images: [...recipeEditForm.tempImages] }); isEditingRecipe.value = false; saveToCloud(); 
-                };
-
-                // Edu
-                const eduForm = reactive({ text: '' });
-                const addEduNote = () => { if(eduForm.text.trim()){ eduList.value.unshift({ type: 'text', content: eduForm.text, date: new Date().toLocaleDateString(), shareCount: 0 }); eduForm.text = ''; } };
-                const handleEduImage = (e) => { let f = e.target.files[0]; if (f) { let r = new FileReader(); r.onload = (ev) => eduList.value.unshift({ type: 'image', content: ev.target.result, date: new Date().toLocaleDateString(), shareCount: 0 }); r.readAsDataURL(f); } };
-                const removeEdu = (i) => eduList.value.splice(i, 1);
-                const incrementShare = (t) => t.shareCount++;
-
-                // Book Logic (Fixed Search)
-                const bookForm = reactive({ searchText: '', title: '', readers: [], date: new Date().toISOString().split('T')[0], tempCover: null });
-                const searchResults = ref([]); const bookFilter = ref('all'); const localBookSearch = ref('');
-                const stats = computed(() => ({ kobe: bookList.value.filter(b => b.readers.includes('Kobe')).length, luka: bookList.value.filter(b => b.readers.includes('Luka')).length }));
-                const filteredBooks = computed(() => { let r = bookList.value; if (bookFilter.value !== 'all') r = r.filter(b => b.readers.includes(bookFilter.value)); if (localBookSearch.value.trim()) { let k = localBookSearch.value.toLowerCase(); r = r.filter(b => b.title.toLowerCase().includes(k)); } return r; });
-                const toggleBookFilter = (n) => bookFilter.value = (bookFilter.value === n) ? 'all' : n;
-                const toggleReader = (n) => bookForm.readers.includes(n) ? bookForm.readers = bookForm.readers.filter(x => x !== n) : bookForm.readers.push(n);
-                
-                // *** FIXED: Search Book Logic ***
-                const searchBooks = async () => { 
-                    if (!bookForm.searchText.trim()) return alert("請輸入書名關鍵字"); 
-                    isSearching.value = true; 
-                    searchResults.value = []; 
-                    try { 
-                        // Using encodeURIComponent to ensure special characters don't break the URL
-                        let res = await fetch(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(bookForm.searchText)}&maxResults=10`); 
-                        if (!res.ok) throw new Error("網絡錯誤");
-                        let d = await res.json(); 
-                        if (d.items && d.items.length > 0) {
-                            searchResults.value = d.items; 
-                        } else {
-                            alert("找不到相關書本，請試試其他關鍵字");
-                        }
-                    } catch (e) { 
-                        console.error(e);
-                        alert("搜尋失敗，請檢查網絡連線"); 
-                    } 
-                    isSearching.value = false; 
-                };
-                
-                const selectBook = (b) => { bookForm.title = b.volumeInfo.title; let img = b.volumeInfo.imageLinks; bookForm.tempCover = img ? img.thumbnail.replace('http:', 'https:') : null; searchResults.value = []; bookForm.searchText = ''; };
-                const clearSelection = () => { bookForm.title = ''; bookForm.tempCover = null; };
-                const addBook = () => { if (bookForm.title.trim()) { bookList.value.unshift({ id: Date.now().toString(), title: bookForm.title, readers: [...bookForm.readers], date: bookForm.date, cover: bookForm.tempCover }); bookForm.title = ''; bookForm.readers = []; bookForm.tempCover = null; bookForm.searchText = ''; } };
-                const confirmRemoveBook = (t) => { if (confirm('確定要刪除這本書的閱讀記錄嗎？')) { let i = bookList.value.indexOf(t); if(i>-1) bookList.value.splice(i, 1); } };
-
-                const currentTabTitle = computed(() => ({ calendar: '行程日曆', tasks: '任務中心', recipe: '私房食譜', edu: '教養筆記', book: '閱讀存摺' }[currentTab.value]));
-                const todayDate = computed(() => new Date().toLocaleDateString('zh-TW', { weekday: 'long', month: 'long', day: 'numeric' }));
-
-                return { 
-                    currentTab, currentTabTitle, todayDate, syncStatusText, syncStatusClass, 
-                    year, month, daysInMonth, firstDayOfMonth, selectedDate, calForm, changeMonth, selectDate, isToday, hasTask, getSelectedDateTasks, addCalendarEvent, removeCalEvent, confirmRemoveCalEvent, getHoliday, 
-                    taskSubTab, todoForm, todos, addTodo, removeTodo, toggleTodo, incrementTodo, shopForm, shoppingList, addShopItem, removeShop, toggleShop, 
-                    recipeSearch, recipeFilter, recipeForm, filteredRecipes, handleRecipeImages, removeTempImage, addRecipe, confirmDeleteRecipe, showRecipeModal, isEditingRecipe, recipeInView, openRecipeModal, startEditRecipe, recipeEditForm, handleEditRecipeImages, removeEditImage, saveEditedRecipe, getEmbedUrl, 
-                    eduForm, eduList, addEduNote, handleEduImage, removeEdu, incrementShare, 
-                    bookList, bookForm, toggleReader, addBook, confirmRemoveBook, searchBooks, isSearching, searchResults, selectBook, clearSelection, stats, bookFilter, toggleBookFilter, filteredBooks, localBookSearch 
-                };
-            }
-        }).mount('#app');
-    </script>
-</body>
-</html>
+                        calendarEvents.value = data.calendarEvents || []; todos.value = data.todos || []; shoppingList.value = data.shoppingList || [];
+                        const remoteEdu = data.eduList || []; const localEduImages = localImages.eduImages || []; eduList.value = [...remoteEdu, ...localEduImages].sort((a,b) => new Date(b.date) - new Date(a.date));
+                        const remoteBooks = data.bookList || []; const localCovers = localImages.
